@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediSync - Gestión de Citas Médicas</title>
+  <style>
+    :root { --primary: #0f62fe; --bg: #f4f7fb; --card: #ffffff; --text: #161616; --border: #dde1e6; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+    .container { max-width: 960px; margin: auto; }
+    header { display: flex; justify-content: space-between; align-items: center; background: var(--primary); color: white; padding: 16px 24px; border-radius: 10px; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: var(--card); padding: 20px; border-radius: 10px; border: 1px solid var(--border); box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+    h2 { margin-top: 0; font-size: 1.15rem; color: var(--primary); }
+    label { display: block; font-weight: 600; margin: 12px 0 4px; font-size: 0.9rem; }
+    input, select { width: 100%; padding: 9px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; }
+    .slots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .slot-btn { padding: 8px 14px; border: 1px solid var(--primary); background: white; color: var(--primary); border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .slot-btn.active, .slot-btn:hover { background: var(--primary); color: white; }
+    .btn-submit { width: 100%; margin-top: 16px; padding: 12px; background: #198038; color: white; border: none; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+    .btn-submit:disabled { background: #a8a8a8; cursor: not-allowed; }
+    .summary { background: #edf5ff; padding: 12px; border-radius: 6px; margin-top: 14px; font-size: 0.9rem; border-left: 4px solid var(--primary); }
+    .alert { padding: 12px; border-radius: 6px; margin-top: 12px; font-size: 0.9rem; }
+    .alert-ok { background: #defbe6; color: #0e6027; }
+    .alert-err { background: #fff1f1; color: #a2191f; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <strong>MediSync</strong> — Sistema de Gestión de Citas Médicas
+    </div>
+    <div>
+      <label style="display:inline; color:white; margin-right:6px;">Rol activo:</label>
+      <select id="rolSelect" style="width:auto; padding:4px 8px;">
+        <option value="PACIENTE">Paciente</option>
+        <option value="MEDICO">Médico</option>
+        <option value="ADMIN">Administrador</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- Módulo Agendamiento (HU-01 / TSK-05) -->
+    <div class="card">
+      <h2>1. Agendar Cita Médica (RF-01)</h2>
+      <label>Nombre del Paciente</label>
+      <input type="text" id="pacienteNombre" placeholder="Ej. Juan Pérez" />
+
+      <label>Correo Electrónico (Notificaciones RF-04)</label>
+      <input type="email" id="pacienteEmail" placeholder="paciente@correo.com" />
+
+      <label>Especialidad</label>
+      <select id="especialidadSelect">
+        <option value="">-- Todas las especialidades --</option>
+        <option value="Cardiología">Cardiología</option>
+        <option value="Pediatría">Pediatría</option>
+        <option value="Medicina General">Medicina General</option>
+        <option value="Dermatología">Dermatología</option>
+      </select>
+
+      <label>Médico</label>
+      <select id="medicoSelect"></select>
+
+      <label>Fecha</label>
+      <input type="date" id="fechaInput" />
+
+      <label>Horarios Disponibles (Tiempo real)</label>
+      <div id="slotsContainer" class="slots">Selecciona médico y fecha...</div>
+
+      <div id="resumenBox" class="summary" style="display:none;"></div>
+      <button id="btnConfirmar" class="btn-submit" disabled>Confirmar Reserva</button>
+      <div id="mensajeReserva"></div>
+    </div>
+
+    <!-- Módulo Expediente Clínico y Agenda (RF-02 / RF-03) -->
+    <div style="display:flex; flex-direction:column; gap:20px;">
+      <div class="card">
+        <h2>2. Expediente Clínico Digital (RF-03)</h2>
+        <p style="font-size:0.85rem; color:#525252; margin-top:0;">
+          Prueba buscar <strong>Juan Pérez</strong> o <strong>María Rodríguez</strong> cambiando el rol arriba.
+        </p>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="buscarPaciente" placeholder="Nombre del paciente..." />
+          <button onclick="consultarExpediente()" style="padding:8px 14px; background:var(--primary); color:white; border:none; border-radius:6px; cursor:pointer;">Buscar</button>
+        </div>
+        <div id="resultadoExpediente"></div>
+      </div>
+
+      <div class="card">
+        <h2>3. Citas Registradas</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Paciente</th><th>Médico</th><th>Fecha/Hora</th></tr>
+          </thead>
+          <tbody id="tablaCitas"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let horaSeleccionada = null;
+  let medicosLista = [];
+
+  const fechaInput = document.getElementById("fechaInput");
+  fechaInput.valueAsDate = new Date();
+
+  async function cargarMedicos() {
+    const esp = document.getElementById("especialidadSelect").value;
+    const url = esp ? `/api/medicos?especialidad=${encodeURIComponent(esp)}` : "/api/medicos";
+    const res = await fetch(url);
+    medicosLista = await res.json();
+    const sel = document.getElementById("medicoSelect");
+    sel.innerHTML = medicosLista.map(m => `<option value="${m.id}">${m.nombre} (${m.especialidad})</option>`).join("");
+    cargarDisponibilidad();
+  }
+
+  async function cargarDisponibilidad() {
+    horaSeleccionada = null;
+    actualizarResumen();
+    const medicoId = document.getElementById("medicoSelect").value;
+    const fecha = fechaInput.value;
+    const cont = document.getElementById("slotsContainer");
+    if (!medicoId || !fecha) return;
+
+    const res = await fetch(`/api/citas/disponibilidad?medico_id=${medicoId}&fecha=${fecha}`);
+    const data = await res.json();
+    if (data.horarios_disponibles.length === 0) {
+      cont.innerHTML = "<em>No hay cupos disponibles para esta fecha.</em>";
+      return;
+    }
+    cont.innerHTML = data.horarios_disponibles.map(h =>
+      `<button type="button" class="slot-btn" onclick="seleccionarHora('${h}', this)">${h}</button>`
+    ).join("");
+  }
+
+  function seleccionarHora(hora, btn) {
+    document.querySelectorAll(".slot-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    horaSeleccionada = hora;
+    actualizarResumen();
+  }
+
+  function actualizarResumen() {
+    const box = document.getElementById("resumenBox");
+    const btn = document.getElementById("btnConfirmar");
+    const sel = document.getElementById("medicoSelect");
+    const medicoTexto = sel.options[sel.selectedIndex]?.text || "";
+    const fecha = fechaInput.value;
+
+    if (horaSeleccionada && medicoTexto && fecha) {
+      box.style.display = "block";
+      box.innerHTML = `<strong>Resumen previo (TSK-05):</strong><br>Médico: ${medicoTexto}<br>Fecha: ${fecha} | Hora: ${horaSeleccionada}`;
+      btn.disabled = false;
+    } else {
+      box.style.display = "none";
+      btn.disabled = true;
+    }
+  }
+
+  document.getElementById("btnConfirmar").addEventListener("click", async () => {
+    const msg = document.getElementById("mensajeReserva");
+    const payload = {
+      paciente_nombre: document.getElementById("pacienteNombre").value.trim(),
+      paciente_email: document.getElementById("pacienteEmail").value.trim(),
+      medico_id: parseInt(document.getElementById("medicoSelect").value),
+      fecha: fechaInput.value,
+      hora: horaSeleccionada
+    };
+
+    if (!payload.paciente_nombre || !payload.paciente_email) {
+      msg.innerHTML = `<div class="alert alert-err">Completa tu nombre y correo electrónico.</div>`;
+      return;
+    }
+
+    const res = await fetch("/api/citas/reservar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.status === 201) {
+      msg.innerHTML = `<div class="alert alert-ok">Cita #${data.id} confirmada (HTTP 201). Notificación enviada a ${data.paciente_email}.</div>`;
+      cargarDisponibilidad();
+      cargarCitas();
+    } else {
+      msg.innerHTML = `<div class="alert alert-err">${data.detail}</div>`;
+    }
+  });
+
+  async function cargarCitas() {
+    const res = await fetch("/api/citas");
+    const citas = await res.json();
+    document.getElementById("tablaCitas").innerHTML = citas.map(c =>
+      `<tr><td>#${c.id}</td><td>${c.paciente_nombre}</td><td>${c.medico_nombre}</td><td>${c.fecha} ${c.hora}</td></tr>`
+    ).join("");
+  }
+
+  async function consultarExpediente() {
+    const nombre = document.getElementById("buscarPaciente").value.trim();
+    const rol = document.getElementById("rolSelect").value;
+    const div = document.getElementById("resultadoExpediente");
+    if (!nombre) return;
+
+    const res = await fetch(`/api/expedientes/${encodeURIComponent(nombre)}`, {
+      headers: { "X-Rol": rol }
+    });
+    const data = await res.json();
+    if (res.ok) {
+      div.innerHTML = `<div class="summary">
+        <strong>Paciente:</strong> ${data.paciente_nombre} (Sangre: ${data.tipo_sangre})<br>
+        <strong>Alergias:</strong> ${data.alergias}<br>
+        <strong>Antecedentes:</strong> ${data.antecedentes}<br>
+        <strong>Última consulta:</strong> ${data.ultima_consulta}
+      </div>`;
+    } else {
+      div.innerHTML = `<div class="alert alert-err">${data.detail}</div>`;
+    }
+  }
+
+  document.getElementById("especialidadSelect").addEventListener("change", cargarMedicos);
+  document.getElementById("medicoSelect").addEventListener("change", cargarDisponibilidad);
+  fechaInput.addEventListener("change", cargarDisponibilidad);
+
+  cargarMedicos();
+  cargarCitas();
+</script>
+</body>
+</html>
